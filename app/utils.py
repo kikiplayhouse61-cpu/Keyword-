@@ -82,39 +82,22 @@ def _keyword_pattern(keyword: str):
     )
 
 
-def find_matching_keywords(
-    text: str,
-    keywords: List[str]
-) -> List[str]:
-    """
-    Smart request matching.
-
-    - Need is compulsory.
-    - Case-insensitive.
-    - Supports extra words and unlimited amounts.
-    - Supports Pop and Popularity independently.
-    - Supports minor suffix variations.
-    - Does not deduplicate different messages from the same sender.
-    """
-
+def find_matching_keywords(text: str, keywords: List[str]) -> List[str]:
     if not text or not keywords:
         return []
 
-    normalized = normalize_text(text)
-
-    # Require the word Need.
-    if not re.search(r"(?<!\w)need(?!\w)", normalized):
-        return []
-
+    text_normalized = re.sub(r"\s+", " ", text.casefold()).strip()
     matched = []
 
     for keyword in keywords:
         if not keyword:
             continue
 
-        pattern = _keyword_pattern(keyword)
+        keyword_normalized = re.sub(
+            r"\s+", " ", keyword.casefold()
+        ).strip()
 
-        if pattern and pattern.search(normalized):
+        if keyword_normalized and keyword_normalized in text_normalized:
             matched.append(keyword)
 
     return matched
