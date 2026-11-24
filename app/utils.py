@@ -1,3 +1,4 @@
+
 import re
 import logging
 from datetime import datetime
@@ -9,6 +10,8 @@ from app.config import Config
 
 logger = logging.getLogger(__name__)
 
+
+# ─────────────────────────── TIMEZONE ────────────────────────────────────────
 
 def get_tz() -> pytz.BaseTzInfo:
     try:
@@ -23,12 +26,15 @@ def get_tz() -> pytz.BaseTzInfo:
 
 def format_time(dt: datetime = None) -> str:
     """Format datetime in local timezone."""
+
     tz = get_tz()
 
     if dt is None:
         dt = datetime.now(tz)
+
     elif dt.tzinfo is None:
         dt = pytz.utc.localize(dt).astimezone(tz)
+
     else:
         dt = dt.astimezone(tz)
 
@@ -39,80 +45,99 @@ def now_local() -> datetime:
     return datetime.now(get_tz())
 
 
-# ─────────────────────────── SMART KEYWORD MATCHING ─────────────────────────
+# ─────────────────────────── TEXT NORMALIZATION ──────────────────────────────
 
 def normalize_text(text: str) -> str:
-    """Normalize text for case-insensitive matching."""
+    """
+    Normalize text for case-insensitive matching.
+    """
+
+    if not text:
+        return ""
+
     text = text.casefold()
-    text = re.sub(r"[_\-]+", " ", text)
-    text = re.sub(r"[^\w\s]", " ", text)
-    return re.sub(r"\s+", " ", text).strip()
+
+    # Normalize repeated spaces
+    text = re.sub(r"\s+", " ", text)
+
+    return text.strip()
 
 
-def _keyword_pattern(keyword: str):
+# ─────────────────────────── KEYWORD MATCHING ────────────────────────────────
+
+def find_matching_keywords(
+    text: str,
+    keywords: List[str]
+) -> List[str]:
     """
-    Build flexible keyword pattern.
-    Allows partial phrase matching with extra words and amounts.
+    Flexible manual keyword matching.
+
+    Features:
+    - No compulsory 'Need' word.
+    - Case-insensitive matching.
+    - Supports English, Hindi and Hinglish.
+    - Supports extra words around keywords.
+    - Supports numbers and amounts such as 10K, 100K, 1M, 15M.
+    - Supports Pop and Popularity.
+    - Uses keywords added by the owner.
+    - Different new messages from the same sender can alert.
     """
 
-    keyword = normalize_text(keyword)
-
-    # Remove optional Need prefix from saved keyword.
-    keyword = re.sub(r"^need\s+", "", keyword)
-
-    tokens = keyword.split()
-
-    if not tokens:
-        return None
-
-    # Allow small spelling variations in words of 4+ characters.
-    patterns = []
-
-    for token in tokens:
-        if len(token) >= 4:
-            patterns.append(re.escape(token) + r"\w*")
-        else:
-            patterns.append(re.escape(token))
-
-    phrase = r"[\W_]+".join(patterns)
-
-    return re.compile(
-        r"(?<!\w)" + phrase + r"(?!\w)",
-        re.IGNORECASE
-    )
-
-
-def find_matching_keywords(text: str, keywords: List[str]) -> List[str]:
     if not text or not keywords:
         return []
 
-    text_normalized = re.sub(r"\s+", " ", text.casefold()).strip()
+    message = normalize_text(text)
+
     matched = []
+    seen = set()
 
     for keyword in keywords:
+
         if not keyword:
             continue
 
-        keyword_normalized = re.sub(
-            r"\s+", " ", keyword.casefold()
-        ).strip()
+        keyword_normalized = normalize_text(keyword)
 
-        if keyword_normalized and keyword_normalized in text_normalized:
+        if not keyword_normalized:
+            continue
+
+        # Avoid duplicate keyword entries
+        if keyword_normalized in seen:
+            continue
+
+        seen.add(keyword_normalized)
+
+        # Match the complete saved phrase inside the message.
+        # Extra text before and after is allowed.
+        if keyword_normalized in message:
             matched.append(keyword)
 
     return matched
 
 
-# ─────────────────────────── MESSAGE DEDUPLICATION ──────────────────────────
+# ─────────────────────────── MESSAGE DEDUPLICATION ───────────────────────────
 
-def build_message_key(group_id: int, message_id: int) -> str:
-    """Unique key for each message in each group."""
+def build_message_key(
+    group_id: int,
+    message_id: int
+) -> str:
+    """
+    Unique key for each message in each group.
+
+    Different messages from the same sender
+    will have different message IDs.
+    """
+
     return f"{group_id}:{message_id}"
 
 
-# ─────────────────────────── TEXT UTILITIES ─────────────────────────────────
+# ─────────────────────────── TEXT UTILITIES ──────────────────────────────────
 
-def truncate(text: str, max_len: int = 200) -> str:
+def truncate(
+    text: str,
+    max_len: int = 200
+) -> str:
+
     if not text:
         return ""
 
@@ -123,19 +148,38 @@ def truncate(text: str, max_len: int = 200) -> str:
 
 # ─────────────────────────── PAGINATION ─────────────────────────────────────
 
-def paginate(items: list, page: int, page_size: int = 10):
-    """Return (page_items, total_pages, current_page)."""
+def paginate(
+    items: list,
+    page: int,
+    page_size: int = 10
+):
+    """
+    Return:
+    (page_items, total_pages, current_page)
+    """
 
     total = len(items)
-    total_pages = max(1, (total + page_size - 1) // page_size)
 
-    page = max(0, min(page, total_pages - 1))
+    total_pages = max(
+        1,
+        (total + page_size - 1) // page_size
+    )
+
+    page = max(
+        0,
+        min(page, total_pages - 1)
+    )
+
     start = page * page_size
 
-    return items[start:start + page_size], total_pages, page
+    return (
+        items[start:start + page_size],
+        total_pages,
+        page
+    )
 
 
-# ─────────────────────────── MARKDOWN ESCAPING ──────────────────────────────
+# ─────────────────────────── MARKDOWN ESCAPING ───────────────────────────────
 
 def escape_md(text: str) -> str:
     """Escape MarkdownV2 special characters."""
